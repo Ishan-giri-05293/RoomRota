@@ -1,0 +1,35 @@
+node_modules/
+.env
+.env.*
+!.env.example
+serviceAccountKey.json
+*.log
+.DS_Store
+coverage/
+# dependencies
+node_modules/
+
+# Next.js
+.next/
+out/
+
+# logs
+*.log
+
+# env
+.env
+.env.local
+.env.*
+
+# macOS
+.DS_Store
+
+# build
+dist/
+coverage/
+
+# vscode
+.vscode/
+
+# turbo
+.turbo/
