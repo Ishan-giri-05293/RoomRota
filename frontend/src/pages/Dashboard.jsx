@@ -1,10 +1,12 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import API from "../services/api";
+import { flatService } from "../services/flatService";
 import { useAuth } from "../context/AuthContext";
 
 export default function Dashboard() {
-  const { user, logout } = useAuth();
+  const { user, logout, updateUser } = useAuth();
+
   const [chores, setChores] = useState([]);
   const [flatData, setFlatData] = useState(null);
   const [leaderboard, setLeaderboard] = useState([]);
@@ -12,23 +14,27 @@ export default function Dashboard() {
 
   useEffect(() => {
     fetchFlatData();
-  }, [user?.flatId]); // Re-fetch if flatId changes
+  }, [user?.flatId]);
 
   const fetchFlatData = async () => {
     try {
-      // Use user from context instead of manual JSON.parse
-      if (!user?.flatId) return;
+      if (!user?.flatId) {
+        setFlatData(null);
+        setChores([]);
+        setLeaderboard([]);
+        setMembersData([]);
+        return;
+      }
 
-      // Fetch flat details
       const res = await API.get(`/flat/${user.flatId}`);
       setFlatData(res.data);
 
-      // Fetch leaderboard
-      const leaderboardRes = await API.get(`/flat/leaderboard/${user.flatId}`);
+      const leaderboardRes = await API.get(
+        `/flat/leaderboard/${user.flatId}`
+      );
       setLeaderboard(leaderboardRes.data);
       setMembersData(leaderboardRes.data);
 
-      // Fetch chores
       const choreRes = await API.get(`/chore/${user.flatId}`);
       setChores(choreRes.data);
     } catch (err) {
@@ -56,27 +62,68 @@ export default function Dashboard() {
     }
   };
 
+  const handleLeaveFlat = async () => {
+    if (!window.confirm("Are you sure you want to leave the flat? 🚪")) {
+      return;
+    }
+
+    try {
+      await flatService.leave();
+
+      updateUser({
+        flatId: null,
+      });
+
+      setFlatData(null);
+      setChores([]);
+      setLeaderboard([]);
+      setMembersData([]);
+
+      alert("You have left the flat. 💨");
+    } catch (err) {
+      alert(
+        err.response?.data?.error?.message ||
+          "Failed to leave flat 💀"
+      );
+    }
+  };
+
   const handleLogout = () => {
-    logout(); 
-    // ProtectedRoute will automatically redirect to "/" because user becomes null
+    logout();
   };
 
   return (
     <div className="min-h-screen bg-black text-white p-8">
       {/* TOP BUTTONS */}
       <div className="flex gap-4 mb-8 flex-wrap">
-        <Link to="/create-flat" className="bg-violet-600 px-4 py-2 rounded-lg hover:bg-violet-700 transition-colors">
+        <Link
+          to="/create-flat"
+          className="bg-violet-600 px-4 py-2 rounded-lg hover:bg-violet-700 transition-colors"
+        >
           Create Flat
         </Link>
-        <Link to="/join-flat" className="bg-green-600 px-4 py-2 rounded-lg hover:bg-green-700 transition-colors">
+
+        <Link
+          to="/join-flat"
+          className="bg-green-600 px-4 py-2 rounded-lg hover:bg-green-700 transition-colors"
+        >
           Join Flat
         </Link>
-        <Link to="/add-chore" className="bg-yellow-600 px-4 py-2 rounded-lg hover:bg-yellow-700 transition-colors text-black font-medium">
+
+        <Link
+          to="/add-chore"
+          className="bg-yellow-600 px-4 py-2 rounded-lg hover:bg-yellow-700 transition-colors text-black font-medium"
+        >
           Add Chore
         </Link>
-        <Link to="/auto-assign" className="bg-red-600 px-4 py-2 rounded-lg hover:bg-red-700 transition-colors">
+
+        <Link
+          to="/auto-assign"
+          className="bg-red-600 px-4 py-2 rounded-lg hover:bg-red-700 transition-colors"
+        >
           Smart Assign
         </Link>
+
         <button
           onClick={handleLogout}
           className="bg-gray-700 px-4 py-2 rounded-lg hover:bg-gray-600 transition-colors"
@@ -92,42 +139,86 @@ export default function Dashboard() {
           {/* FLAT INFO */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             <div className="bg-zinc-900 p-6 rounded-2xl border border-zinc-800">
-              <h2 className="text-xl font-bold text-gray-400">Flat Name</h2>
-              <p className="text-2xl mt-4 font-semibold">{flatData.flatName}</p>
+              <h2 className="text-xl font-bold text-gray-400">
+                Flat Name
+              </h2>
+              <p className="text-2xl mt-4 font-semibold">
+                {flatData.flatName}
+              </p>
             </div>
 
             <div className="bg-zinc-900 p-6 rounded-2xl border border-zinc-800">
-              <h2 className="text-xl font-bold text-gray-400">Invite Code</h2>
-              <p className="text-2xl mt-4 font-mono text-violet-400">{flatData.inviteCode}</p>
+              <h2 className="text-xl font-bold text-gray-400">
+                Invite Code
+              </h2>
+              <p className="text-2xl mt-4 font-mono text-violet-400">
+                {flatData.inviteCode}
+              </p>
             </div>
 
-            <div className="bg-zinc-900 p-6 rounded-2xl border border-zinc-800">
-              <h2 className="text-xl font-bold text-gray-400">Members</h2>
-              <p className="text-2xl mt-4 font-semibold">{flatData.members?.length || 0}</p>
+            <div className="bg-zinc-900 p-6 rounded-2xl border border-zinc-800 flex flex-col justify-between">
+              <div>
+                <h2 className="text-xl font-bold text-gray-400">
+                  Members
+                </h2>
+
+                <p className="text-2xl mt-4 font-semibold">
+                  {flatData.members?.length || 0}
+                </p>
+              </div>
+
+              <button
+                onClick={handleLeaveFlat}
+                className="mt-4 text-red-500 hover:text-red-400 text-sm font-bold text-left transition-colors"
+              >
+                Leave Flat →
+              </button>
             </div>
           </div>
 
           {/* CHORES */}
           <div className="mt-10">
-            <h2 className="text-2xl font-bold mb-4">Chores 🧹</h2>
+            <h2 className="text-2xl font-bold mb-4">
+              Chores 🧹
+            </h2>
+
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
               {chores.length > 0 ? (
                 chores.map((chore) => (
-                  <div key={chore.choreId} className="bg-zinc-900 p-4 rounded-xl border border-zinc-800">
-                    <h3 className="text-xl font-semibold">{chore.title}</h3>
-                    <p className={`mt-2 ${chore.completed ? "text-green-400" : "text-yellow-400"}`}>
-                      {chore.completed ? "✅ Completed" : "⌛ Pending"}
+                  <div
+                    key={chore.choreId}
+                    className="bg-zinc-900 p-4 rounded-xl border border-zinc-800"
+                  >
+                    <h3 className="text-xl font-semibold">
+                      {chore.title}
+                    </h3>
+
+                    <p
+                      className={`mt-2 ${
+                        chore.completed
+                          ? "text-green-400"
+                          : "text-yellow-400"
+                      }`}
+                    >
+                      {chore.completed
+                        ? "✅ Completed"
+                        : "⌛ Pending"}
                     </p>
+
                     <p className="text-gray-500 mt-2 text-sm">
-                      Assigned To: {
-                        chore.assignedTo
-                          ? membersData.find((u) => u.uid === chore.assignedTo)?.name || "Unknown"
-                          : "Unassigned"
-                      }
+                      Assigned To:{" "}
+                      {chore.assignedTo
+                        ? membersData.find(
+                            (u) => u.uid === chore.assignedTo
+                          )?.name || "Unknown"
+                        : "Unassigned"}
                     </p>
+
                     {!chore.completed && (
                       <button
-                        onClick={() => handleComplete(chore.choreId)}
+                        onClick={() =>
+                          handleComplete(chore.choreId)
+                        }
                         className="mt-4 w-full bg-green-600 hover:bg-green-700 px-4 py-2 rounded-lg transition-colors"
                       >
                         Complete ✅
@@ -136,36 +227,59 @@ export default function Dashboard() {
                   </div>
                 ))
               ) : (
-                <p className="text-gray-400 italic">No chores yet 😭</p>
+                <p className="text-gray-400 italic">
+                  No chores yet 😭
+                </p>
               )}
             </div>
           </div>
 
           {/* LEADERBOARD */}
           <div className="mt-10">
-            <h2 className="text-2xl font-bold mb-4 text-violet-400">Leaderboard 👑</h2>
+            <h2 className="text-2xl font-bold mb-4 text-violet-400">
+              Leaderboard 👑
+            </h2>
+
             <div className="space-y-4">
               {leaderboard.map((u, index) => (
                 <div
                   key={u.uid}
                   className={`bg-zinc-900 p-4 rounded-xl flex justify-between items-center border ${
-                    u.uid === user.uid ? "border-violet-500" : "border-zinc-800"
+                    u.uid === user.uid
+                      ? "border-violet-500"
+                      : "border-zinc-800"
                   }`}
                 >
                   <div>
                     <Link to={`/profile/${u.uid}`}>
                       <h3 className="text-xl font-semibold hover:text-violet-400 transition-colors">
-                        #{index + 1} {u.name} {u.uid === user.uid && "(You)"}
+                        #{index + 1} {u.name}{" "}
+                        {u.uid === user.uid && "(You)"}
                       </h3>
                     </Link>
-                    <p className="text-gray-400">Score: {u.score}</p>
-                    <p className={`text-sm mt-1 ${u.isAvailable ? "text-green-500" : "text-red-500"}`}>
-                      {u.isAvailable ? "🟢 Available" : "🔴 Busy"}
+
+                    <p className="text-gray-400">
+                      Score: {u.score}
+                    </p>
+
+                    <p
+                      className={`text-sm mt-1 ${
+                        u.isAvailable
+                          ? "text-green-500"
+                          : "text-red-500"
+                      }`}
+                    >
+                      {u.isAvailable
+                        ? "🟢 Available"
+                        : "🔴 Busy"}
                     </p>
                   </div>
 
                   <div className="flex flex-col items-center gap-2">
-                    <div className="text-3xl">{index === 0 ? "👑" : "🔥"}</div>
+                    <div className="text-3xl">
+                      {index === 0 ? "👑" : "🔥"}
+                    </div>
+
                     {user.uid === u.uid && (
                       <button
                         onClick={() => handleToggle(u.uid)}
@@ -182,8 +296,13 @@ export default function Dashboard() {
         </>
       ) : (
         <div className="bg-zinc-900 p-10 rounded-2xl text-center border border-dashed border-zinc-700">
-          <p className="text-gray-400 text-xl">No Flat Joined Yet 😭</p>
-          <p className="text-gray-500 mt-2">Create or join a flat to get started!</p>
+          <p className="text-gray-400 text-xl">
+            No Flat Joined Yet 😭
+          </p>
+
+          <p className="text-gray-500 mt-2">
+            Create or join a flat to get started!
+          </p>
         </div>
       )}
     </div>
