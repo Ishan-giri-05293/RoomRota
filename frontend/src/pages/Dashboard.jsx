@@ -74,9 +74,19 @@ export default function Dashboard() {
 
     try {
       await choreService.delete(id);
-      fetchAllData(); // Refresh chores & leaderboard
+      fetchAllData();
     } catch (err) {
       alert("Delete failed 💀");
+    }
+  };
+
+  // NEW: Update Chore Handler
+  const handleUpdateChore = async (id, data) => {
+    try {
+      await choreService.update(id, data);
+      fetchAllData();
+    } catch (err) {
+      alert("Update failed 💀");
     }
   };
 
@@ -141,6 +151,7 @@ export default function Dashboard() {
             members={leaderboard}
             onComplete={handleCompleteChore}
             onDelete={handleDeleteChore}
+            onUpdate={handleUpdateChore}
           />
 
           <div>

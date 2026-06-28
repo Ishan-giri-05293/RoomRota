@@ -20,5 +20,9 @@ export const choreService = {
   delete: async (choreId) => {
     const res = await API.delete(`/chore/${choreId}`);
     return res.data;
+  },
+  update: async (choreId, data) => {
+    const res = await API.patch(`/chore/${choreId}`, data);
+    return res.data;
   }
 };
