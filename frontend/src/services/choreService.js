@@ -16,5 +16,9 @@ export const choreService = {
   autoAssign: async (choreData) => {
     const res = await API.post("/chore/auto-assign", choreData);
     return res.data;
+  },
+  delete: async (choreId) => {
+    const res = await API.delete(`/chore/${choreId}`);
+    return res.data;
   }
 };
