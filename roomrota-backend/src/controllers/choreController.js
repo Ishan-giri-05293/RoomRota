@@ -82,7 +82,6 @@ const getFlatChores = async (req, res) => {
     query = query.where("completed", "==", true);
   }
 
-  // No Firestore composite index required
   const snapshot = await query.limit(100).get();
 
   const chores = snapshot.docs.map((doc) => ({
@@ -90,7 +89,6 @@ const getFlatChores = async (req, res) => {
     ...doc.data(),
   }));
 
-  // Manual sorting
   chores.sort(
     (a, b) =>
       (b.createdAt?.toMillis?.() || 0) -
@@ -164,6 +162,7 @@ const deleteChore = async (req, res) => {
     message: "Chore deleted successfully",
   });
 };
+
 const autoAssignChore = async (req, res) => {
   const flatId = requiredString(req.body.flatId, "flatId", {
     max: 128,
@@ -222,8 +221,7 @@ const autoAssignChore = async (req, res) => {
     }
 
     const selectedRef = db.collection("users").doc(selected.uid);
-
-    transaction.create(choreRef, {
+        transaction.create(choreRef, {
       ...input,
       flatId,
       assignedTo: selected.uid,
@@ -247,10 +245,78 @@ const autoAssignChore = async (req, res) => {
   });
 };
 
+const updateChore = async (req, res) => {
+  const { choreId } = req.params;
+  const { title, assignedTo } = req.body;
+
+  const choreRef = db.collection("chores").doc(choreId);
+
+  await db.runTransaction(async (transaction) => {
+    const choreDoc = await transaction.get(choreRef);
+
+    if (!choreDoc.exists) {
+      throw new ApiError(404, "Chore not found", "CHORE_NOT_FOUND");
+    }
+
+    const chore = choreDoc.data();
+
+    if (chore.completed) {
+      throw new ApiError(
+        400,
+        "Cannot edit a completed chore",
+        "CHORE_ALREADY_COMPLETED"
+      );
+    }
+
+    await memberFlat(chore.flatId, req.user.uid);
+
+    const updates = {};
+
+    if (title) {
+      updates.title = requiredString(title, "title", {
+        min: 2,
+        max: 120,
+      });
+    }
+
+    // Handle assignee change
+    if (assignedTo !== undefined && assignedTo !== chore.assignedTo) {
+      // Remove workload from old assignee
+      if (chore.assignedTo) {
+        const oldUserRef = db.collection("users").doc(chore.assignedTo);
+
+        transaction.update(oldUserRef, {
+          currentChoreCount: admin.firestore.FieldValue.increment(-1),
+        });
+      }
+
+      // Add workload to new assignee
+      if (assignedTo) {
+        const newUserRef = db.collection("users").doc(assignedTo);
+
+        transaction.update(newUserRef, {
+          currentChoreCount: admin.firestore.FieldValue.increment(1),
+          lastAssignedAt: admin.firestore.FieldValue.serverTimestamp(),
+          lastChore: title || chore.title,
+        });
+      }
+
+      updates.assignedTo = assignedTo;
+    }
+
+    transaction.update(choreRef, updates);
+  });
+
+  res.status(200).json({
+    message: "Chore updated successfully",
+  });
+};
+
 module.exports = {
   addChore,
   getFlatChores,
   completeChore,
   deleteChore,
   autoAssignChore,
+  updateChore,
 };
