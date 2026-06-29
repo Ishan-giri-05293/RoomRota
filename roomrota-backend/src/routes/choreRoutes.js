@@ -7,7 +7,9 @@ const {
   completeChore,
   autoAssignChore,
   deleteChore,
-  updateChore, // <--- Added
+  updateChore,
+  undoCompleteChore,
+
 } = require("../controllers/choreController");
 const authenticate = require("../middleware/authenticate");
 const asyncHandler = require("../utils/asyncHandler");
@@ -19,5 +21,7 @@ router.patch("/complete/:choreId", asyncHandler(completeChore));
 router.patch("/:choreId", asyncHandler(updateChore)); // <--- Added
 router.post("/auto-assign", asyncHandler(autoAssignChore));
 router.delete("/:choreId", asyncHandler(deleteChore));
+router.patch("/undo/:choreId", asyncHandler(undoCompleteChore));
+
 
 module.exports = router;

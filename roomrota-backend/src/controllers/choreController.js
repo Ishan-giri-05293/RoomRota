@@ -165,6 +165,84 @@ const completeChore = async (req, res) => {
     message: "Chore completed",
   });
 };
+const undoCompleteChore = async (req, res) => {
+  const { choreId } = req.params;
+  const actorId = req.user.uid;
+  const choreRef = db.collection("chores").doc(choreId);
+
+  let chore;
+
+  await db.runTransaction(async (transaction) => {
+    // --- STEP 1: READ PHASE ---
+    const choreDoc = await transaction.get(choreRef);
+
+    if (!choreDoc.exists) {
+      throw new ApiError(404, "Chore not found", "CHORE_NOT_FOUND");
+    }
+
+    chore = choreDoc.data();
+
+    // Must already be completed
+    if (!chore.completed) {
+      throw new ApiError(
+        400,
+        "Chore is not completed",
+        "CHORE_NOT_COMPLETED"
+      );
+    }
+
+    // Only the person who completed it can undo
+    if (chore.completedBy !== actorId) {
+      throw new ApiError(
+        403,
+        "Only the person who completed this chore can undo it",
+        "FORBIDDEN"
+      );
+    }
+
+    // Fetch the assigned user's doc NOW while we are still in the READ PHASE
+    let assignedDoc = null;
+    if (chore.assignedTo) {
+      const assignedRef = db.collection("users").doc(chore.assignedTo);
+      assignedDoc = await transaction.get(assignedRef);
+    }
+
+    // --- STEP 2: WRITE PHASE ---
+    // Revert chore back to pending
+    transaction.update(choreRef, {
+      completed: false,
+      completedAt: admin.firestore.FieldValue.delete(),
+      completedBy: admin.firestore.FieldValue.delete(),
+    });
+
+    // Remove completion credit
+    const actorRef = db.collection("users").doc(actorId);
+    transaction.update(actorRef, {
+      completedCount: admin.firestore.FieldValue.increment(-1),
+      score: admin.firestore.FieldValue.increment(-1),
+    });
+
+    // Restore workload to original assignee using the doc we fetched earlier
+    if (assignedDoc && assignedDoc.exists && assignedDoc.data().flatId === chore.flatId) {
+      transaction.update(assignedDoc.ref, {
+        currentChoreCount: admin.firestore.FieldValue.increment(1),
+      });
+    }
+  });
+
+  await logEvent({
+    flatId: chore.flatId,
+    type: "CHORE_UNDO",
+    description: `reverted "${chore.title}" to pending`,
+    userName: req.user.name,
+    userId: actorId,
+  });
+
+  res.status(200).json({
+    message: "Chore reverted to pending",
+  });
+};
+
 const deleteChore = async (req, res) => {
   const { choreId } = req.params;
   const choreRef = db.collection("chores").doc(choreId);
@@ -205,7 +283,6 @@ const deleteChore = async (req, res) => {
     message: "Chore deleted successfully",
   });
 };
-
 const autoAssignChore = async (req, res) => {
   const flatId = requiredString(req.body.flatId, "flatId", {
     max: 128,
@@ -297,6 +374,7 @@ const autoAssignChore = async (req, res) => {
     choreId: choreRef.id,
   });
 };
+
 const updateChore = async (req, res) => {
   const { choreId } = req.params;
   const { title, assignedTo } = req.body;
@@ -373,11 +451,11 @@ const updateChore = async (req, res) => {
     message: "Chore updated successfully",
   });
 };
-
 module.exports = {
   addChore,
   getFlatChores,
   completeChore,
+  undoCompleteChore,
   deleteChore,
   autoAssignChore,
   updateChore,
