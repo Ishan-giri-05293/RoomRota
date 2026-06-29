@@ -2,6 +2,7 @@ const { admin, db } = require("../config/firebase");
 const ApiError = require("../utils/ApiError");
 const { optionalDate, requiredString } = require("../utils/validation");
 const { selectAssignee } = require("../services/assignmentService");
+const { logEvent } = require("../utils/eventLogger");
 
 const choreInput = (body) => ({
   title: requiredString(body.title, "title", { min: 2, max: 120 }),
@@ -35,7 +36,6 @@ const addChore = async (req, res) => {
   });
 
   const assignedTo = req.body.assignedTo || null;
-
   const input = choreInput(req.body);
 
   await memberFlat(flatId, req.user.uid);
@@ -48,6 +48,7 @@ const addChore = async (req, res) => {
 
       transaction.update(userRef, {
         currentChoreCount: admin.firestore.FieldValue.increment(1),
+        assignedCount: admin.firestore.FieldValue.increment(1),
         lastAssignedAt: admin.firestore.FieldValue.serverTimestamp(),
         lastChore: input.title,
       });
@@ -60,6 +61,14 @@ const addChore = async (req, res) => {
       completed: false,
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
     });
+  });
+
+  await logEvent({
+    flatId,
+    type: "CHORE_CREATED",
+    description: `created "${input.title}"`,
+    userName: req.user.name,
+    userId: req.user.uid,
   });
 
   res.status(201).json({
@@ -100,6 +109,9 @@ const getFlatChores = async (req, res) => {
 
 const completeChore = async (req, res) => {
   const choreRef = db.collection("chores").doc(req.params.choreId);
+  const actorId = req.user.uid;
+
+  let chore;
 
   await db.runTransaction(async (transaction) => {
     const choreDoc = await transaction.get(choreRef);
@@ -108,33 +120,56 @@ const completeChore = async (req, res) => {
       throw new ApiError(404, "Chore not found", "CHORE_NOT_FOUND");
     }
 
-    const chore = choreDoc.data();
+    chore = choreDoc.data();
 
     if (chore.completed) return;
 
     transaction.update(choreRef, {
       completed: true,
       completedAt: admin.firestore.FieldValue.serverTimestamp(),
+      completedBy: actorId,
     });
 
     if (chore.assignedTo) {
-      const userRef = db.collection("users").doc(chore.assignedTo);
+      const assignedRef = db.collection("users").doc(chore.assignedTo);
 
-      transaction.update(userRef, {
-        score: admin.firestore.FieldValue.increment(1),
+      transaction.update(assignedRef, {
         currentChoreCount: admin.firestore.FieldValue.increment(-1),
       });
     }
+
+    // Give credit to the person who clicked the button
+    const actorRef = db.collection("users").doc(actorId);
+
+    transaction.update(actorRef, {
+      completedCount: admin.firestore.FieldValue.increment(1),
+
+      // Backward compatibility with old leaderboard
+      score: admin.firestore.FieldValue.increment(1),
+    });
+  });
+
+  const isHelper = chore.assignedTo && chore.assignedTo !== actorId;
+
+  await logEvent({
+    flatId: chore.flatId,
+    type: "CHORE_COMPLETED",
+    description: isHelper
+      ? `completed a chore assigned to another member: "${chore.title}"`
+      : `completed their assigned chore: "${chore.title}"`,
+    userName: req.user.name,
+    userId: actorId,
   });
 
   res.status(200).json({
     message: "Chore completed",
   });
 };
-
 const deleteChore = async (req, res) => {
   const { choreId } = req.params;
   const choreRef = db.collection("chores").doc(choreId);
+
+  let chore;
 
   await db.runTransaction(async (transaction) => {
     const choreDoc = await transaction.get(choreRef);
@@ -143,7 +178,7 @@ const deleteChore = async (req, res) => {
       throw new ApiError(404, "Chore not found", "CHORE_NOT_FOUND");
     }
 
-    const chore = choreDoc.data();
+    chore = choreDoc.data();
 
     await memberFlat(chore.flatId, req.user.uid);
 
@@ -156,6 +191,14 @@ const deleteChore = async (req, res) => {
     }
 
     transaction.delete(choreRef);
+  });
+
+  await logEvent({
+    flatId: chore.flatId,
+    type: "CHORE_DELETED",
+    description: `deleted "${chore.title}"`,
+    userName: req.user.name,
+    userId: req.user.uid,
   });
 
   res.status(200).json({
@@ -221,7 +264,8 @@ const autoAssignChore = async (req, res) => {
     }
 
     const selectedRef = db.collection("users").doc(selected.uid);
-        transaction.create(choreRef, {
+
+    transaction.create(choreRef, {
       ...input,
       flatId,
       assignedTo: selected.uid,
@@ -231,11 +275,20 @@ const autoAssignChore = async (req, res) => {
 
     transaction.update(selectedRef, {
       currentChoreCount: admin.firestore.FieldValue.increment(1),
+      assignedCount: admin.firestore.FieldValue.increment(1),
       lastAssignedAt: admin.firestore.FieldValue.serverTimestamp(),
       lastChore: input.title,
     });
 
     return selected;
+  });
+
+  await logEvent({
+    flatId,
+    type: "SMART_ASSIGN",
+    description: `AI assigned "${input.title}" to ${selectedUser.name}`,
+    userName: "Robot",
+    userId: "ai-system",
   });
 
   res.status(201).json({
@@ -244,12 +297,13 @@ const autoAssignChore = async (req, res) => {
     choreId: choreRef.id,
   });
 };
-
 const updateChore = async (req, res) => {
   const { choreId } = req.params;
   const { title, assignedTo } = req.body;
 
   const choreRef = db.collection("chores").doc(choreId);
+
+  let chore;
 
   await db.runTransaction(async (transaction) => {
     const choreDoc = await transaction.get(choreRef);
@@ -258,7 +312,7 @@ const updateChore = async (req, res) => {
       throw new ApiError(404, "Chore not found", "CHORE_NOT_FOUND");
     }
 
-    const chore = choreDoc.data();
+    chore = choreDoc.data();
 
     if (chore.completed) {
       throw new ApiError(
@@ -279,7 +333,6 @@ const updateChore = async (req, res) => {
       });
     }
 
-    // Handle assignee change
     if (assignedTo !== undefined && assignedTo !== chore.assignedTo) {
       // Remove workload from old assignee
       if (chore.assignedTo) {
@@ -296,6 +349,7 @@ const updateChore = async (req, res) => {
 
         transaction.update(newUserRef, {
           currentChoreCount: admin.firestore.FieldValue.increment(1),
+          assignedCount: admin.firestore.FieldValue.increment(1),
           lastAssignedAt: admin.firestore.FieldValue.serverTimestamp(),
           lastChore: title || chore.title,
         });
@@ -305,6 +359,14 @@ const updateChore = async (req, res) => {
     }
 
     transaction.update(choreRef, updates);
+  });
+
+  await logEvent({
+    flatId: chore.flatId,
+    type: "CHORE_UPDATED",
+    description: `updated "${title || chore.title}"`,
+    userName: req.user.name,
+    userId: req.user.uid,
   });
 
   res.status(200).json({

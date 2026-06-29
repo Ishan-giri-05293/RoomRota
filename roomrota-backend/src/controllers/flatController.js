@@ -2,6 +2,7 @@ const crypto = require("crypto");
 const { admin, db } = require("../config/firebase");
 const ApiError = require("../utils/ApiError");
 const { requiredString } = require("../utils/validation");
+const { logEvent } = require("../utils/eventLogger");
 
 const createInviteCode = () =>
   crypto.randomBytes(6).toString("base64url").toUpperCase();
@@ -9,6 +10,7 @@ const createInviteCode = () =>
 const uniqueInviteCode = async () => {
   for (let attempt = 0; attempt < 5; attempt += 1) {
     const code = createInviteCode();
+
     const match = await db
       .collection("flats")
       .where("inviteCode", "==", code)
@@ -22,8 +24,9 @@ const uniqueInviteCode = async () => {
 };
 
 const assertMember = (flatDoc, uid) => {
-  if (!flatDoc.exists)
+  if (!flatDoc.exists) {
     throw new ApiError(404, "Flat not found", "FLAT_NOT_FOUND");
+  }
 
   if (!flatDoc.data().members?.includes(uid)) {
     throw new ApiError(
@@ -42,14 +45,16 @@ const createFlat = async (req, res) => {
 
   const uid = req.user.uid;
   const inviteCode = await uniqueInviteCode();
+
   const flatRef = db.collection("flats").doc();
   const userRef = db.collection("users").doc(uid);
 
   await db.runTransaction(async (transaction) => {
     const userDoc = await transaction.get(userRef);
 
-    if (!userDoc.exists)
+    if (!userDoc.exists) {
       throw new ApiError(404, "User not found", "USER_NOT_FOUND");
+    }
 
     if (userDoc.data().flatId) {
       throw new ApiError(
@@ -107,11 +112,13 @@ const joinFlat = async (req, res) => {
   await db.runTransaction(async (transaction) => {
     const [flatDoc, userDoc] = await transaction.getAll(flatRef, userRef);
 
-    if (!flatDoc.exists)
+    if (!flatDoc.exists) {
       throw new ApiError(404, "Flat not found", "FLAT_NOT_FOUND");
+    }
 
-    if (!userDoc.exists)
+    if (!userDoc.exists) {
       throw new ApiError(404, "User not found", "USER_NOT_FOUND");
+    }
 
     const currentFlatId = userDoc.data().flatId;
 
@@ -138,6 +145,14 @@ const joinFlat = async (req, res) => {
     transaction.update(userRef, {
       flatId: flatRef.id,
     });
+  });
+
+  await logEvent({
+    flatId: flatRef.id,
+    type: "MEMBER_JOINED",
+    description: "joined the flat",
+    userName: req.user.name,
+    userId: req.user.uid,
   });
 
   res.status(200).json({
@@ -183,19 +198,31 @@ const getLeaderboard = async (req, res) => {
       return {
         uid: doc.id,
         name: user.name,
-        score: Number(user.score) || 0,
-        currentChoreCount: Number(user.currentChoreCount) || 0,
+
+        // Backwards compatibility:
+        // New users use completedCount.
+        // Old users still use score.
+        completedCount: Number(user.completedCount ?? user.score ?? 0),
+
+        assignedCount: Number(user.assignedCount || 0),
+        currentChoreCount: Number(user.currentChoreCount || 0),
+
         isAvailable: user.isAvailable !== false,
       };
     })
-    .sort((a, b) => b.score - a.score || a.name.localeCompare(b.name));
+    .sort(
+      (a, b) =>
+        b.completedCount - a.completedCount ||
+        a.name.localeCompare(b.name)
+    );
 
   res.status(200).json(leaderboard);
 };
-
 const leaveFlat = async (req, res) => {
   const uid = req.user.uid;
   const userRef = db.collection("users").doc(uid);
+
+  let flatId;
 
   await db.runTransaction(async (transaction) => {
     const userDoc = await transaction.get(userRef);
@@ -204,7 +231,7 @@ const leaveFlat = async (req, res) => {
       throw new ApiError(404, "User not found", "USER_NOT_FOUND");
     }
 
-    const flatId = userDoc.data().flatId;
+    flatId = userDoc.data().flatId;
 
     if (!flatId) {
       throw new ApiError(
@@ -228,6 +255,14 @@ const leaveFlat = async (req, res) => {
         members: admin.firestore.FieldValue.arrayRemove(uid),
       });
     }
+  });
+
+  await logEvent({
+    flatId,
+    type: "MEMBER_LEFT",
+    description: "left the flat",
+    userName: req.user.name,
+    userId: req.user.uid,
   });
 
   res.status(200).json({
