@@ -17,7 +17,7 @@ export default function Dashboard() {
   const [chores, setChores] = useState([]);
   const [flatData, setFlatData] = useState(null);
   const [leaderboard, setLeaderboard] = useState([]);
-  const [events, setEvents] = useState([]); // New state for events
+  const [events, setEvents] = useState([]);
   const [loading, setLoading] = useState(true);
 
   const fetchAllData = useCallback(async () => {
@@ -27,23 +27,23 @@ export default function Dashboard() {
     }
 
     try {
-      // Use individual try-catches or separate calls so one failure 
-      // (like the Activity Log) doesn't kill the whole dashboard.
-      const details = await flatService.getDetails(user.flatId);
+      // Parallel fetch for core data
+      const [details, lb, choreList] = await Promise.all([
+        flatService.getDetails(user.flatId),
+        flatService.getLeaderboard(user.flatId),
+        choreService.getAll(user.flatId),
+      ]);
+
       setFlatData(details);
-
-      const lb = await flatService.getLeaderboard(user.flatId);
       setLeaderboard(lb);
-
-      const choreList = await choreService.getAll(user.flatId);
       setChores(choreList);
 
-      // Fetch events separately - if this fails, the app continues
+      // Separate fetch for non-critical Activity Log
       try {
         const eventList = await eventService.getEvents(user.flatId);
         setEvents(eventList);
       } catch (e) {
-        console.error("Activity Log failed to load, but dashboard is safe.");
+        console.error("Activity Log failed to load, but dashboard is safe.", e);
       }
 
     } catch (err) {
@@ -55,6 +55,8 @@ export default function Dashboard() {
 
   useEffect(() => {
     fetchAllData();
+
+    // Refresh data when user switches back to this browser tab
     window.addEventListener("focus", fetchAllData);
     return () => window.removeEventListener("focus", fetchAllData);
   }, [fetchAllData]);
@@ -66,7 +68,7 @@ export default function Dashboard() {
       updateUser({ flatId: null });
       setFlatData(null);
     } catch (err) {
-      alert("Failed 💀");
+      alert("Failed to leave flat 💀");
     }
   };
 
@@ -75,17 +77,17 @@ export default function Dashboard() {
       await choreService.complete(id);
       fetchAllData();
     } catch (err) {
-      alert("Failed 💀");
+      alert("Failed to complete chore 💀");
     }
   };
 
   const handleDeleteChore = async (id) => {
-    if (!window.confirm("Delete chore? 🗑️")) return;
+    if (!window.confirm("Delete this chore? 🗑️")) return;
     try {
       await choreService.delete(id);
       fetchAllData();
     } catch (err) {
-      alert("Failed 💀");
+      alert("Failed to delete chore 💀");
     }
   };
 
@@ -98,6 +100,15 @@ export default function Dashboard() {
     }
   };
 
+  const handleUndoChore = async (id) => {
+    try {
+      await choreService.undo(id);
+      fetchAllData();
+    } catch (err) {
+      alert(err.response?.data?.error?.message || "Undo failed 💀");
+    }
+  };
+
   if (loading) return (
     <div className="min-h-screen bg-black text-white flex items-center justify-center">
       <p className="animate-pulse">Loading RoomRota... 😈</p>
@@ -106,12 +117,23 @@ export default function Dashboard() {
 
   return (
     <div className="min-h-screen bg-black text-white p-8">
+      {/* TOP NAVIGATION */}
       <div className="flex gap-4 mb-8 flex-wrap">
-        <Link to="/create-flat" className="bg-violet-600 px-4 py-2 rounded-lg font-bold">Create Flat</Link>
-        <Link to="/join-flat" className="bg-green-600 px-4 py-2 rounded-lg font-bold">Join Flat</Link>
-        <Link to="/add-chore" className="bg-yellow-600 px-4 py-2 rounded-lg text-black font-bold">Add Chore</Link>
-        <Link to="/auto-assign" className="bg-red-600 px-4 py-2 rounded-lg font-bold">Smart Assign</Link>
-        <button onClick={logout} className="bg-gray-700 px-4 py-2 rounded-lg font-bold">Logout</button>
+        <Link to="/create-flat" className="bg-violet-600 px-4 py-2 rounded-lg font-bold hover:bg-violet-700 transition-colors">
+          Create Flat
+        </Link>
+        <Link to="/join-flat" className="bg-green-600 px-4 py-2 rounded-lg font-bold hover:bg-green-700 transition-colors">
+          Join Flat
+        </Link>
+        <Link to="/add-chore" className="bg-yellow-600 px-4 py-2 rounded-lg text-black font-bold hover:bg-yellow-700 transition-colors">
+          Add Chore
+        </Link>
+        <Link to="/auto-assign" className="bg-red-600 px-4 py-2 rounded-lg font-bold hover:bg-red-700 transition-colors">
+          Smart Assign
+        </Link>
+        <button onClick={logout} className="bg-gray-700 px-4 py-2 rounded-lg font-bold hover:bg-gray-600 transition-colors">
+          Logout
+        </button>
       </div>
 
       <h1 className="text-4xl font-bold mb-8 tracking-tight">Dashboard 💀</h1>
@@ -126,6 +148,8 @@ export default function Dashboard() {
             onComplete={handleCompleteChore}
             onDelete={handleDeleteChore}
             onUpdate={handleUpdateChore}
+            onUndo={handleUndoChore}
+            currentUser={user}
           />
 
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
@@ -141,6 +165,7 @@ export default function Dashboard() {
       ) : (
         <div className="bg-zinc-900 p-10 rounded-2xl text-center border border-dashed border-zinc-700">
           <p className="text-zinc-400 text-xl">No Flat Joined Yet 😭</p>
+          <p className="text-zinc-500 mt-2 text-sm">Create or join a flat to see your chores!</p>
         </div>
       )}
     </div>

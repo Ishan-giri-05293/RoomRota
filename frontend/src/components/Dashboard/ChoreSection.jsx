@@ -6,6 +6,8 @@ export default function ChoreSection({
   onComplete,
   onDelete,
   onUpdate,
+  onUndo,
+  currentUser,
 }) {
   const [view, setView] = useState("active");
   const [editingId, setEditingId] = useState(null);
@@ -121,7 +123,7 @@ export default function ChoreSection({
                 </div>
               </div>
             ) : (
-              <>
+                            <>
                 <div>
                   <div className="flex justify-between items-start">
                     <h3 className="text-xl font-semibold text-white">
@@ -165,29 +167,43 @@ export default function ChoreSection({
                   </button>
                 ) : (
                   <>
-                    <p className="mt-4 text-xs text-zinc-600 italic">
-                      Done at:{" "}
-                      {chore.completedAt
-                        ? new Date(
-                            chore.completedAt._seconds * 1000
-                          ).toLocaleDateString()
-                        : "Recently"}
-                    </p>
+                                      <div className="mt-4 pt-4 border-t border-zinc-800">
+                      <div className="flex justify-between items-end">
+                        <div className="space-y-1">
+                          <p className="text-[10px] text-zinc-500 uppercase font-bold">
+                            Responsible:{" "}
+                            {members.find(
+                              (m) => m.uid === chore.assignedTo
+                            )?.name || "Unassigned"}
+                          </p>
 
-                    <div className="mt-4 pt-4 border-t border-zinc-800 space-y-1">
-                      <p className="text-[10px] text-zinc-500 uppercase font-bold">
-                        Responsible:{" "}
-                        {members.find(
-                          (m) => m.uid === chore.assignedTo
-                        )?.name || "Unassigned"}
-                      </p>
+                          <p className="text-[10px] text-green-500 uppercase font-bold">
+                            Executed By:{" "}
+                            {members.find(
+                              (m) => m.uid === chore.completedBy
+                            )?.name || "Unknown"}
+                          </p>
 
-                      <p className="text-[10px] text-green-500 uppercase font-bold">
-                        Executed By:{" "}
-                        {members.find(
-                          (m) => m.uid === chore.completedBy
-                        )?.name || "Unknown"}
-                      </p>
+                          <p className="text-[10px] text-zinc-600 italic">
+                            Done at:{" "}
+                            {chore.completedAt
+                              ? new Date(
+                                  chore.completedAt._seconds * 1000
+                                ).toLocaleDateString()
+                              : "Recently"}
+                          </p>
+                        </div>
+
+                        {currentUser &&
+                          chore.completedBy === currentUser.uid && (
+                            <button
+                              onClick={() => onUndo(chore.choreId)}
+                              className="text-violet-400 hover:text-violet-300 text-[10px] font-bold uppercase border border-violet-400/30 px-2 py-1 rounded transition"
+                            >
+                              Undo
+                            </button>
+                          )}
+                      </div>
                     </div>
                   </>
                 )}
@@ -195,8 +211,7 @@ export default function ChoreSection({
             )}
           </div>
         ))}
-
-        {filteredChores.length === 0 && (
+                {filteredChores.length === 0 && (
           <div className="col-span-full py-12 text-center text-zinc-500 italic">
             No {view} chores found 😈
           </div>

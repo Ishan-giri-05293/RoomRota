@@ -24,5 +24,9 @@ export const choreService = {
   update: async (choreId, data) => {
     const res = await API.patch(`/chore/${choreId}`, data);
     return res.data;
+  },
+    undo: async (choreId) => {
+    const res = await API.patch(`/chore/undo/${choreId}`);
+    return res.data;
   }
 };
