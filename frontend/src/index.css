@@ -1,1 +1,26 @@
 @import "tailwindcss";
+
+:root {
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  background-color: #F9F9FB; /* The Canvas Color */
+  color: #1A1A1B;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Custom selection to match brand */
+::selection {
+  background: rgba(45, 91, 255, 0.1);
+  color: #2D5BFF;
+}
+
+/* Smooth scrolling for the philosophy/how-it-works sections */
+html {
+  scroll-behavior: smooth;
+}
